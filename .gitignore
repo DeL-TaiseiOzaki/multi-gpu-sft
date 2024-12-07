@@ -177,3 +177,7 @@ pyrightconfig.json
 
 # Wandb
 wandb/
+
+data/
+output/
+cache/

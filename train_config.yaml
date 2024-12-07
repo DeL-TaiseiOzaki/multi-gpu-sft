@@ -1,0 +1,27 @@
+directory_config:
+  model: DeL-TaiseiOzaki/Tengentoppa-llm-jp-base-13B
+  dataset: /mnt/ozaki/multi-gpu-sft/data/sft_reasoning.jsonl  # データセットのパスを指定
+  output: output2  # 出力先を指定
+parameter_config:
+  common:
+    lr: 5e-5
+    epoch: 1
+    batch_size: 2
+    gradient_accumulation_steps: 32  # 追加
+    max_memory: null 
+    cutoff_len: 2048
+  lora:
+    r: 8
+    alpha: 32
+    drop_out: 0.05
+    target_modules: 
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj
+      - gate_proj
+      - up_proj
+      - down_proj
+prompt_type: text
+logging_steps: 10
+sample: 1

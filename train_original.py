@@ -1,10 +1,10 @@
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 import torch
 from peft import LoraConfig
-from datasets import disable_caching, load_dataset, concatenate_datasets
+from datasets import disable_caching, load_dataset
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
@@ -12,29 +12,28 @@ from transformers import (
     HfArgumentParser,
     BitsAndBytesConfig,
 )
-from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
+from trl import SFTTrainer
 
 disable_caching()
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class SFTTrainingArguments:
     model_name_or_path: str
-    data_files: list[str]
-    eval_data_files: list[str] = None
+    data_files: List[str]
+    eval_data_files: Optional[List[str]] = None
     tokenizer_name_or_path: Optional[str] = None
     use_fast: bool = True
-    additional_special_tokens: list[str] = None
+    additional_special_tokens: List[str] = None
     max_seq_length: int = 2048
     load_in_8bit: bool = False
     load_in_4bit: bool = False
-    use_flash_attention_2: bool = False
-    use_peft: bool = False
-    peft_target_model: Optional[str] = "llm-jp"
-    peft_target_modules: Optional[list[str]] = None
-    peft_lora_r: int = 8
+    use_flash_attention_2: str = "flash_attention_2"
+    use_peft: bool = True
+    peft_target_model: Optional[str] = "llama-all"
+    peft_target_modules: Optional[List[str]] = None
+    peft_lora_r: int = 16
     peft_lora_alpha: int = 32
     peft_lora_dropout: float = 0.05
 
@@ -45,7 +44,6 @@ class SFTTrainingArguments:
             if self.peft_target_model == "llm-jp":
                 self.peft_target_modules = ["c_attn", "c_proj", "c_fc"]
             elif self.peft_target_model == "llama":
-                # https://github.com/serp-ai/LLaMA-8bit-LoRA/blob/main/finetune_peft_8bit.py
                 self.peft_target_modules = [
                     "q_proj",
                     "k_proj",
@@ -56,7 +54,6 @@ class SFTTrainingArguments:
                     "down_proj",
                 ]
             elif self.peft_target_model == "llama-all":
-                # https://note.com/kan_hatakeyama/n/ncd09c52d26c7
                 self.peft_target_modules = [
                     "q_proj",
                     "k_proj",
@@ -75,8 +72,11 @@ class SFTTrainingArguments:
                 )
 
     def from_pretrained_kwargs(self, training_args):
+        # 量子化はオフ, bf16を使用
         if self.load_in_8bit:
-            kwargs = {"load_in_8bit": True}
+            kwargs = {"quantization_config": BitsAndBytesConfig(
+                    load_in_8bit=True)
+            }
         elif self.load_in_4bit:
             kwargs = {
                 "quantization_config": BitsAndBytesConfig(
@@ -89,20 +89,86 @@ class SFTTrainingArguments:
         elif training_args.bf16:
             kwargs = {"torch_dtype": torch.bfloat16}
         else:
-            kwargs = {"torch_dtype": torch.float16}
-        kwargs["use_flash_attention_2"] = self.use_flash_attention_2
+            kwargs = {"torch_dtype": "auto"}
+        kwargs["attn_implementation"] = self.use_flash_attention_2
         return kwargs
 
-
 def load_datasets(data_files):
-    datasets = []
-    for data_file in data_files:
-        dataset = load_dataset("json", data_files=data_file)
-        dataset = dataset["train"]
-        dataset = dataset.select_columns("text")
-        datasets.append(dataset)
-    return concatenate_datasets(datasets)
+    dataset1 = load_dataset("json", data_files=data_files)
+    dataset2 = dataset1["train"]
+    dataset3 = dataset2.select_columns("text")
+    return dataset3
 
+class ReasoningDataCollator:
+    """
+    このコラトレータは、与えられた"text"列のプロンプトから、
+    <|REASONING|>以降を出力ラベルとして学習するように処理します。
+
+    前提:
+    <|SYSTEM|>system_prompt</|SYSTEM|>\n
+    <|USER|>user_prompt</|USER|>\n
+    <|HINT|>hint_prompt</|HINT|>\n (optional)
+    <|REASONING|>reasoning_prompt</|REASONING|>\n
+    <|ASSISTANT|>assistant_prompt</|ASSISTANT|>
+    """
+
+    def __init__(self, tokenizer, max_seq_length=2048):
+        self.tokenizer = tokenizer
+        self.max_seq_length = max_seq_length
+        self.reasoning_token = "<|REASONING|>"
+        self.reasoning_token_id = self.tokenizer.convert_tokens_to_ids(self.reasoning_token)
+
+    def __call__(self, examples: List[Dict[str, Any]]):
+        # ここでexamplesはすでに {"input_ids":..., "attention_mask":...} の形式
+        # もしexamplesがまだlist of dictでバッチ化されていない場合、スタック処理が必要
+        
+        # input_idsを取得
+        input_ids = [torch.tensor(e["input_ids"], dtype=torch.long) for e in examples]
+        attention_masks = [torch.tensor(e["attention_mask"], dtype=torch.long) for e in examples]
+
+        # バッチ内で最大長にパディング
+        input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id)
+        attention_masks = torch.nn.utils.rnn.pad_sequence(attention_masks, batch_first=True, padding_value=0)
+
+        # max_seq_lengthでトランケート(念のため)
+        if input_ids.size(1) > self.max_seq_length:
+            input_ids = input_ids[:, :self.max_seq_length]
+            attention_masks = attention_masks[:, :self.max_seq_length]
+
+        labels = input_ids.clone()
+
+        # reasoning_token_idの位置を特定し、それより前を-100
+        for i in range(input_ids.size(0)):
+            reasoning_pos = (input_ids[i] == self.reasoning_token_id).nonzero(as_tuple=True)[0]
+            if len(reasoning_pos) == 0:
+                # reasoning_tokenがない場合は全て-100
+                labels[i] = -100
+            else:
+                start_pos = reasoning_pos[0]
+                labels[i, :start_pos] = -100
+
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_masks,
+            "labels": labels,
+        }
+
+def upload_to_hub(trainer, training_args):
+    """Upload the model, tokenizer, and config to the HuggingFace Hub"""
+    if not training_args.push_to_hub:
+        return
+    
+    if not training_args.hub_model_id:
+        raise ValueError("hub_model_id must be specified when push_to_hub is True")
+    
+    logger.info(f"Uploading model to HuggingFace Hub as {training_args.hub_model_id}")
+    
+    try:
+        trainer.push_to_hub()
+        logger.info("Successfully uploaded model to HuggingFace Hub")
+    except Exception as e:
+        logger.error(f"Failed to upload model to HuggingFace Hub: {str(e)}")
+        raise
 
 def main() -> None:
     parser = HfArgumentParser((TrainingArguments, SFTTrainingArguments))
@@ -120,7 +186,6 @@ def main() -> None:
     )
 
     logger.info("Loading data")
-
     train_dataset = load_datasets(sft_training_args.data_files)
     if sft_training_args.eval_data_files:
         eval_dataset = load_datasets(sft_training_args.eval_data_files)
@@ -128,14 +193,8 @@ def main() -> None:
     else:
         eval_dataset = None
 
-    logger.info("Formatting prompts")
-    instruction_ids = tokenizer.encode("\n\n### 指示:\n", add_special_tokens=False)[1:]
-    response_ids = tokenizer.encode("\n\n### 応答:\n", add_special_tokens=False)[1:]
-    collator = DataCollatorForCompletionOnlyLM(
-        instruction_template=instruction_ids,
-        response_template=response_ids,
-        tokenizer=tokenizer,
-    )
+    logger.info("Preparing data collator")
+    collator = ReasoningDataCollator(tokenizer=tokenizer, max_seq_length=sft_training_args.max_seq_length)
 
     logger.info(f"Loading model from {sft_training_args.model_name_or_path}")
     kwargs = sft_training_args.from_pretrained_kwargs(training_args)
@@ -175,7 +234,6 @@ def main() -> None:
         tokenizer=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        dataset_text_field="text",
         data_collator=collator,
         peft_config=peft_config,
         max_seq_length=sft_training_args.max_seq_length,
@@ -187,6 +245,8 @@ def main() -> None:
     logger.info("Saving model")
     trainer.save_model()
 
+    # Add HuggingFace Hub upload
+    upload_to_hub(trainer, training_args)
 
 if __name__ == "__main__":
     logging.basicConfig(
