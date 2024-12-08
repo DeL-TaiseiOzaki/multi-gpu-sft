@@ -181,3 +181,4 @@ wandb/
 data/
 output/
 cache/
+huggingface_tokenizers_cache/

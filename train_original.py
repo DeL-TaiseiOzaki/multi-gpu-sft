@@ -31,7 +31,7 @@ class SFTTrainingArguments:
     load_in_4bit: bool = False
     use_flash_attention_2: str = "flash_attention_2"
     use_peft: bool = True
-    peft_target_model: Optional[str] = "llama-all"
+    peft_target_model: Optional[str] = "llama"
     peft_target_modules: Optional[List[str]] = None
     peft_lora_r: int = 16
     peft_lora_alpha: int = 32
@@ -75,7 +75,9 @@ class SFTTrainingArguments:
         # 量子化はオフ, bf16を使用
         if self.load_in_8bit:
             kwargs = {"quantization_config": BitsAndBytesConfig(
-                    load_in_8bit=True)
+                    load_in_8bit=True,
+                    llm_int8_skip_modules=["lm_head"],
+                    llm_int8_enable_fp32_cpu_offload=True)
             }
         elif self.load_in_4bit:
             kwargs = {
