@@ -15,3 +15,11 @@ tpu_use_sudo: false
 use_cpu: false
 deepspeed_config:
   zero_stage: 2
+  zero_optimization:
+    stage: 2
+    offload_optimizer:
+      device: "cpu"
+      pin_memory: true
+    contiguous_gradients: true
+    overlap_comm: true
+  gradient_accumulation_steps: 16
