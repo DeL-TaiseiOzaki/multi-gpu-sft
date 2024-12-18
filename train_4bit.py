@@ -89,23 +89,6 @@ def load_datasets(data_files, tokenizer):
     )
     return formatted_dataset
 
-def upload_to_hub(model, tokenizer, model_id, token):
-    """モデルとトークナイザーをHuggingFace Hubにアップロード"""
-    logger.info(f"Uploading model to HuggingFace Hub as {model_id}")
-    
-    try:
-        # モデルのアップロード
-        model.push_to_hub(model_id, token=token, private=True)
-        logger.info("Successfully uploaded model to HuggingFace Hub")
-        
-        # トークナイザーのアップロード
-        tokenizer.push_to_hub(model_id, token=token, private=True)
-        logger.info("Successfully uploaded tokenizer to HuggingFace Hub")
-        
-    except Exception as e:
-        logger.error(f"Failed to upload to HuggingFace Hub: {str(e)}")
-        raise
-
 def main() -> None:
     parser = HfArgumentParser((TrainingArguments, SFTTrainingArguments))
     training_args, sft_training_args = parser.parse_args_into_dataclasses()
@@ -171,17 +154,6 @@ def main() -> None:
 
     logger.info("Saving model")
     trainer.save_model()
-
-    # メイン関数内でのアップロード部分
-    if training_args.push_to_hub and training_args.hub_model_id:  # SFTTrainingArguments ではなく training_args を使用
-        logger.info("Uploading to HuggingFace Hub")
-        upload_to_hub(
-            model=model,
-            tokenizer=tokenizer,
-            model_id=training_args.hub_model_id,  
-            token=os.getenv("HF_TOKEN")
-        )
-
 
 if __name__ == "__main__":
     logging.basicConfig(

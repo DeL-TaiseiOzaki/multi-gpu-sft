@@ -51,7 +51,6 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-# プログラムからの使用
-files_in_order = ['data/sft_reasoning.jsonl', 'data/sft_final.jsonl']
-merge_jsonl_files(files_in_order, 'sft.jsonl')
+    # プログラムからの使用
+    files_in_order = ['data/sft_reasoning_nemo.jsonl', 'data/sft_reasoning_QwQ.jsonl']
+    merge_jsonl_files(files_in_order, 'sft_reasoning.jsonl')

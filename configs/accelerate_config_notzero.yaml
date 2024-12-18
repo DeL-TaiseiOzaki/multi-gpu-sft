@@ -15,5 +15,3 @@ tpu_use_sudo: false
 use_cpu: false
 deepspeed_config:
   zero_stage: 0
-  bf16:
-    enabled: "auto"

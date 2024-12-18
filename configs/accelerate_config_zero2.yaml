@@ -15,11 +15,26 @@ tpu_use_sudo: false
 use_cpu: false
 deepspeed_config:
   zero_stage: 2
+  zero3_init_flag: true
   zero_optimization:
     stage: 2
     offload_optimizer:
       device: "cpu"
       pin_memory: true
-    contiguous_gradients: true
+    offload_param:
+      device: "cpu"
+      pin_memory: true
     overlap_comm: true
-  gradient_accumulation_steps: 16
+    contiguous_gradients: true
+    reduce_bucket_size: 5e7
+    stage3_prefetch_bucket_size: 5e7
+    stage3_param_persistence_threshold: 1e6
+    memory_efficient_linear: true
+    round_robin_gradients: true
+  optimizer: 
+    type: "adamw_torch_fused"
+  train_batch_size: "auto"
+  train_micro_batch_size_per_gpu: "auto"
+  gradient_accumulation_steps: 32
+  zero_allow_untested_optimizer: true
+  gradient_clipping: 1.0

@@ -4,11 +4,10 @@ from typing import Dict, Any
 
 DEFAULT_SYSTEM_PROMPT = """あなたは親切で有能なアシスタントです。
 ユーザーからの質問に対して、正しい回答を提供します。
-与えられた情報を正確に整理し，論理的に説明し，簡潔に回答します．"""
+与えられた情報を正確に整理し，論理的に説明し，簡潔に回答します．<|REASONING|>，</|REASONING|>の間で思考の過程を抜けがないように記載します．"""
 
 def format_prompt(
     instruction: str,
-    hint: str = "",
     reasoning: str = "",
     response: str = "",
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
@@ -26,11 +25,11 @@ def format_prompt(
         フォーマット済みのプロンプト
     """
         
-    return f"<|SYSTEM|>{system_prompt}</|SYSTEM|>\n<|USER|>{instruction}</|USER|>\n<|HINT|>{hint}</|HINT|>\n<|REASONING|>{reasoning}</|REASONING|>\n<|ASSISTANT|>{response}</|ASSISTANT|>"
+    return f"<|SYSTEM|>{system_prompt}</|SYSTEM|>\n<|USER|>{instruction}</|USER|>\n<|REASONING|>{reasoning}</|REASONING|>\n<|ASSISTANT|>{response}</|ASSISTANT|>"
 
 def convert_dataset(
     dataset_name: str,
-    output_path: str = "sft_dataset.jsonl",
+    output_path: str = "",
     split: str = "train",
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
 ) -> None:
@@ -52,8 +51,7 @@ def convert_dataset(
             # プロンプトフォーマットの作成
             formatted_text = format_prompt(
                 instruction=item['instruction'],
-                hint="",
-                response=item["output"],
+                response=item["response"],
                 reasoning=item["reasoning"],
                 system_prompt=system_prompt
             )
@@ -67,8 +65,8 @@ def convert_dataset(
 # 使用例
 if __name__ == "__main__":
     # データセット名とファイルパスを指定して実行
-    dataset_name = "DeL-TaiseiOzaki/Tengentoppa-sft-reasoning-v2.0"  # 実際のデータセット名に置き換えてください
-    output_path = "sft_reasoning.jsonl"
+    dataset_name = "DeL-TaiseiOzaki/Tengentoppa-sft-seed-elyza-reasoning"  # 実際のデータセット名に置き換えてください
+    output_path = "sft_reasoning_QwQ.jsonl"
     
     convert_dataset(
         dataset_name=dataset_name,

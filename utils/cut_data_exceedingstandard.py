@@ -2,7 +2,7 @@ import json
 from transformers import AutoTokenizer
 from pathlib import Path
 
-def filter_long_sequences(input_path, output_path, model_name, max_tokens=2048):
+def filter_long_sequences(input_path, output_path, model_name, max_tokens=1536):
     """
     JSONLファイルから指定したトークン数を超えるデータを除外して新しいファイルを作成する
     
@@ -79,9 +79,9 @@ def filter_long_sequences(input_path, output_path, model_name, max_tokens=2048):
 
 # 使用例
 if __name__ == "__main__":
-    input_file = "data/sft.jsonl"
-    output_file = "data/sft_filstered.jsonl"
-    model_name = "DeL-TaiseiOzaki/Tengentoppa-llm-jp-base-13B"
+    input_file = "data/sft_reasoning.jsonl"
+    output_file = "data/sft_reasoning_filterd.jsonl"
+    model_name = "DeL-TaiseiOzaki/Tengentoppa-llm-jp-13B-base"
     
     stats = filter_long_sequences(input_file, output_file, model_name)
     

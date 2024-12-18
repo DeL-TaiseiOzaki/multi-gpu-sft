@@ -4,7 +4,7 @@ distributed_type: DEEPSPEED
 downcast_bf16: 'no'
 machine_rank: 0
 main_training_function: main
-mixed_precision: bf16
+mixed_precision: "no"
 num_machines: 1
 num_processes: 2
 rdzv_backend: static
@@ -28,11 +28,13 @@ deepspeed_config:
     contiguous_gradients: true
     reduce_bucket_size: 5e7
     stage3_prefetch_bucket_size: 5e7
-    stage3_param_persistence_threshold: 1e5
+    stage3_param_persistence_threshold: 1e6
     memory_efficient_linear: true
-  bf16:
-    enabled: "auto"
+    round_robin_gradients: true
+  optimizer: 
+    type: "adamw_torch_fused"
   train_batch_size: "auto"
   train_micro_batch_size_per_gpu: "auto"
   gradient_accumulation_steps: 16
+  zero_allow_untested_optimizer: true
   gradient_clipping: 1.0
