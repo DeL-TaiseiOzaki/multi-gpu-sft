@@ -11,7 +11,7 @@ from huggingface_hub import login
 login(token="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")
 
 # モデルとトークナイザーの初期化
-model_name = "meta-llama/Llama-3.3-70B-Instruct"
+model_name = "Qwen/Qwen2.5-72B-Instruct"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 llm = LLM(
     model=model_name,
@@ -26,7 +26,7 @@ sampling_params = SamplingParams(
     max_tokens=1024
 )
 
-BATCH_SIZE = 200  # バッチサイズを小さくする（大きなモデルのため）
+BATCH_SIZE = 500  # バッチサイズを小さくする（大きなモデルのため）
 SAVE_INTERVAL = 1000  # 保存間隔を調整
 
 # システムプロンプトのリスト
@@ -43,21 +43,21 @@ SYSTEM_PROMPTS = [
     "あなたは柔軟性が高く適応力のあるアシスタントです。状況に応じて異なるアプローチを取り、多様な解決策を提示してください。"
 ]
 
-def load_progress(filename="progress.json"):
+def load_progress(filename="gen_dataset/progress.json"):
     """進捗をロード"""
     if os.path.exists(filename):
         with open(filename, "r") as f:
             return json.load(f)
     return {"processed_count": 0}
 
-def save_progress(progress, filename="progress.json"):
+def save_progress(progress, filename="gen_dataset/progress.json"):
     """進捗を保存（トランザクション的）"""
     temp_filename = filename + ".tmp"
     with open(temp_filename, "w") as f:
         json.dump(progress, f)
     os.rename(temp_filename, filename)
 
-def append_outputs(data, filename="generated_sets.jsonl"):
+def append_outputs(data, filename="gen_dataset/generated_sets.jsonl"):
     """生成されたデータを保存（アペンドモード）"""
     with open(filename, "a", encoding="utf-8") as f:
         for entry in data:
@@ -73,7 +73,7 @@ def clean_instruction(instruction):
             return instruction[instruction.index("指示文") + split_index + 2:].strip()
     return instruction.strip()  # 条件に合わない場合はそのまま返す
 
-def load_instruction_samples(filename="question_sample.json"):
+def load_instruction_samples(filename="gen_dataset/question_sample.json"):
     with open(filename, "r", encoding="utf-8") as f:
         samples = json.load(f)
     return [item["question"] for item in samples]
