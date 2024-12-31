@@ -35,6 +35,6 @@ deepspeed_config:
     type: "adamw_torch_fused"
   train_batch_size: "auto"
   train_micro_batch_size_per_gpu: "auto"
-  gradient_accumulation_steps: 16
+  gradient_accumulation_steps: 128
   zero_allow_untested_optimizer: true
   gradient_clipping: 1.0

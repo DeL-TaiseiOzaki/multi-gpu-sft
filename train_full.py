@@ -11,7 +11,7 @@ from transformers import (
     HfArgumentParser,
     BitsAndBytesConfig,
 )
-from trl import SFTTrainer
+from trl import SFTTrainer, DataCollatorForCompletionOnlyLM
 import os
 
 disable_caching()
@@ -24,73 +24,44 @@ class SFTTrainingArguments:
     eval_data_files: Optional[List[str]] = None
     tokenizer_name_or_path: Optional[str] = None
     use_fast: bool = True
-    max_seq_length: int = 2048
-    load_in_8bit: bool = False
-    load_in_4bit: bool = False
+    max_seq_length: int = 1024
     use_flash_attention_2: str = "flash_attention_2"
-
-    def __post_init__(self):
-        if self.load_in_8bit and self.load_in_4bit:
-            raise ValueError("load_in_8bit and load_in_4bit are mutually exclusive")
 
     def from_pretrained_kwargs(self, training_args):
         kwargs = {"torch_dtype": "auto"}
-        if self.load_in_8bit:
-            kwargs = {
-                "quantization_config": BitsAndBytesConfig(
-                    load_in_8bit=True,
-                    llm_int8_skip_modules=["lm_head"],
-                    llm_int8_enable_fp32_cpu_offload=True
-                )
-            }
-        elif self.load_in_4bit:
-            kwargs = {
-                "quantization_config": BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_use_double_quant=True,
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_compute_dtype=torch.bfloat16,
-                )
-            }
-        elif training_args.bf16:
-            kwargs = {"torch_dtype": torch.bfloat16}
-
+        kwargs = {"torch_dtype": "auto"}
         kwargs["attn_implementation"] = self.use_flash_attention_2
         return kwargs
 
-def load_datasets(data_files, tokenizer):
-    """JSONLファイルからデータセットを読み込み、フォーマットを適用"""
+def load_datasets(data_files, tokenizer, max_seq_length):
+    """JSONLファイルからデータセットを読み込み、フォーマットとトークナイズを適用"""
     dataset = load_dataset("json", data_files=data_files)
-    
+
     def format_prompt(example):
-        # BOSとEOSトークンを追加
-        formatted_text = f"{tokenizer.bos_token}{example['text']}{tokenizer.eos_token}"
-        return {"formatted_text": formatted_text}
-    
-    # データセットにフォーマットを適用
-    formatted_dataset = dataset["train"].map(
+        return {"formatted_text": f"{tokenizer.bos_token}{example['text']}{tokenizer.eos_token}"}
+
+    dataset = dataset["train"].map(
         format_prompt,
         num_proc=4,
         remove_columns=dataset["train"].column_names
     )
-    return formatted_dataset
 
-def upload_to_hub(model, tokenizer, model_id, token):
-    """モデルとトークナイザーをHuggingFace Hubにアップロード"""
-    logger.info(f"Uploading model to HuggingFace Hub as {model_id}")
-    
-    try:
-        # モデルのアップロード
-        model.push_to_hub(model_id, token=token, private=True)
-        logger.info("Successfully uploaded model to HuggingFace Hub")
-        
-        # トークナイザーのアップロード
-        tokenizer.push_to_hub(model_id, token=token, private=True)
-        logger.info("Successfully uploaded tokenizer to HuggingFace Hub")
-        
-    except Exception as e:
-        logger.error(f"Failed to upload to HuggingFace Hub: {str(e)}")
-        raise
+    def tokenize(example):
+        # トークナイズ時に truncation と max_length を指定する
+        return tokenizer(
+            example["formatted_text"], 
+            truncation=True, 
+            max_length=max_seq_length,
+        )
+
+    dataset = dataset.map(
+        tokenize,
+        num_proc=4,
+        batched=False,  
+    )
+    dataset.set_format(type="torch", columns=["input_ids", "attention_mask"])
+
+    return dataset
 
 def main() -> None:
     parser = HfArgumentParser((TrainingArguments, SFTTrainingArguments))
@@ -103,7 +74,10 @@ def main() -> None:
     )
 
     logger.info("Loading and formatting data")
-    train_dataset = load_datasets(sft_training_args.data_files, tokenizer)
+    train_dataset = load_datasets(
+        sft_training_args.data_files,
+        tokenizer,
+        max_seq_length=sft_training_args.max_seq_length)
     if sft_training_args.eval_data_files:
         eval_dataset = load_datasets(sft_training_args.eval_data_files, tokenizer)
         training_args.do_eval = True
@@ -120,16 +94,11 @@ def main() -> None:
     if training_args.gradient_checkpointing:
         model.gradient_checkpointing_enable()
         model.enable_input_require_grads()
-
+    
     trainer = SFTTrainer(
         model=model,
         train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        max_seq_length=sft_training_args.max_seq_length,
-        dataset_text_field="formatted_text",
-        tokenizer=tokenizer,
         args=training_args,
-        packing=False,
     )
 
     logger.info("Disabling model cache")
