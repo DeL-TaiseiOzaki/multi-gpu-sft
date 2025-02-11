@@ -28,7 +28,7 @@ class SFTTrainingArguments:
     max_seq_length: int = 2048
     load_in_8bit: bool = False
     load_in_4bit: bool = False
-    use_flash_attention_2: str = "flash_attention_2"
+    use_flash_attention_2: str = "eager"
     use_peft: bool = True
     peft_target_model: Optional[str] = "llama"
     peft_target_modules: Optional[List[str]] = None
@@ -43,8 +43,7 @@ class SFTTrainingArguments:
             if self.peft_target_model == "llama-all":
                 self.peft_target_modules = [
                     "q_proj", "k_proj", "v_proj", "o_proj",
-                    "gate_proj", "up_proj", "down_proj",
-                    "lm_head", "embed_tokens",
+                    "gate_proj", "up_proj", "down_proj", "embed_tokens",
                 ]
 
     def from_pretrained_kwargs(self, training_args):
@@ -61,8 +60,7 @@ class SFTTrainingArguments:
             kwargs = {
                 "quantization_config": BitsAndBytesConfig(
                     load_in_4bit=True,
-                    bnb_4bit_use_double_quant=True,
-                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_quant_type="nf4", 
                     bnb_4bit_compute_dtype=torch.bfloat16,
                 )
             }
@@ -157,7 +155,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format="%(asctime)s %(name)s:%(lineno)d: %(levelname)s: %(message)s",
     )
     main()
